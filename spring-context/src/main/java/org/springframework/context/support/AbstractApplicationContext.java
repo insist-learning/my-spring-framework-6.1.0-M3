@@ -134,6 +134,25 @@ import org.springframework.util.ReflectionUtils;
  */
 public abstract class AbstractApplicationContext extends DefaultResourceLoader
 		implements ConfigurableApplicationContext {
+	/*============================================理解======================================================*/
+
+	/* 所有的事件监听器 */
+	private final Set<ApplicationListener<?>> applicationListeners = new LinkedHashSet<>();
+
+	/**
+	 * 存储容器创建前的监听器，只做存储，具体为在容器创建前调用了 addApplicationListener 方法的，spring 启动时会将实现了 ApplicationListener 的 bean 作为监听器注入进来，但是那是
+	 * 在 bean 的后置处理器中处理的，如果要在启动时就使事件监听到，就要在创建容器前添加监听器，springboot 中是通过 spring.factories
+	 */
+	@Nullable
+	private Set<ApplicationListener<?>> earlyApplicationListeners;
+
+	/* 存储预计要发布的事件，在容器中调用发布事件时,即 pushEvent ,因为这个时候监听器可能还没有加载进事件广播中,或者可能事件广播器都没有实例化，在后续加载所有监听器后会自动发布这些事件 */
+	@Nullable
+	private Set<ApplicationEvent> earlyApplicationEvents;
+
+	/* 事件广播器，存储了所有监听器，发布事件时选择对应的监听器 */
+	@Nullable
+	private ApplicationEventMulticaster applicationEventMulticaster;
 
 	/**
 	 * Name of the MessageSource bean in the factory.
@@ -213,23 +232,14 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	@Nullable
 	private MessageSource messageSource;
 
-	/** Helper class used in event publishing. */
-	@Nullable
-	private ApplicationEventMulticaster applicationEventMulticaster;
+
 
 	/** Application startup metrics. **/
 	private ApplicationStartup applicationStartup = ApplicationStartup.DEFAULT;
 
-	/** Statically specified listeners. */
-	private final Set<ApplicationListener<?>> applicationListeners = new LinkedHashSet<>();
 
-	/** Local listeners registered before refresh. */
-	@Nullable
-	private Set<ApplicationListener<?>> earlyApplicationListeners;
 
-	/** ApplicationEvents published before the multicaster setup. */
-	@Nullable
-	private Set<ApplicationEvent> earlyApplicationEvents;
+
 
 
 	/**
@@ -652,7 +662,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 			}
 		}
 
-		// Initialize any placeholder property sources in the context environment.
+		// Initialize any placeholder property sources in the context environment.覆盖后就能在环境创建前定义资源
 		initPropertySources();
 
 		// Validate that all properties marked as required are resolvable:
@@ -703,6 +713,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 		// Tell the internal bean factory to use the context's class loader etc.
 		beanFactory.setBeanClassLoader(getClassLoader());
 		beanFactory.setBeanExpressionResolver(new StandardBeanExpressionResolver(beanFactory.getBeanClassLoader()));
+		// 添加属性编辑注册中心管理员，可以向某个注册中心中注册属性编辑器
 		beanFactory.addPropertyEditorRegistrar(new ResourceEditorRegistrar(this, getEnvironment()));
 
 		// Configure the bean factory with context callbacks.
@@ -891,6 +902,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 
 		// Do not initialize FactoryBeans here: We need to leave all regular beans
 		// uninitialized to let post-processors apply to them!
+		// 添加可能还没有实例化的 bean
 		String[] listenerBeanNames = getBeanNamesForType(ApplicationListener.class, true, false);
 		for (String listenerBeanName : listenerBeanNames) {
 			getApplicationEventMulticaster().addApplicationListenerBean(listenerBeanName);
